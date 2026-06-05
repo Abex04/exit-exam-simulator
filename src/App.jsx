@@ -32,10 +32,45 @@ function App() {
       return;
     }
 
-    // UPDATED: No more 100 question limit! It takes everything you have in the database.
-    const shuffled = [...examQuestions].sort(() => 0.5 - Math.random());
+    // NEW: Limit sessions to exactly 100 unique questions.
+    // Persist used question ids in localStorage to avoid duplicates across retakes.
+    const USED_KEY = 'usedQuestionIds_v1';
+    const allQuestions = [...examQuestions];
 
-    setSessionQuestions(shuffled);
+    let usedIds = [];
+    try {
+      const raw = localStorage.getItem(USED_KEY);
+      usedIds = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      usedIds = [];
+    }
+
+    // Filter out questions already used in prior sessions
+    let available = allQuestions.filter(q => !usedIds.includes(q.id));
+
+    // If not enough unused questions remain to form a 100-item session,
+    // reset the used history so a fresh full draw can be made.
+    if (available.length < 100) {
+      // Only notify when there are some used ids (otherwise pool itself is <100)
+      if (usedIds.length > 0) {
+        // Inform the user that used history is being reset to allow a new 100-question session
+        // This avoids silently duplicating across retakes when pool is exhausted.
+        // Using alert keeps UI simple and explicit.
+        alert('Not enough unused questions remaining to form a 100-question session. Resetting previous session history to allow a fresh session.');
+      }
+      available = allQuestions.slice();
+      usedIds = [];
+    }
+
+    // Shuffle available and pick exactly 100 items (or fewer if pool <100)
+    const shuffled = available.sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, Math.min(100, shuffled.length));
+
+    // Update used ids and persist
+    const newUsed = Array.from(new Set([...usedIds, ...selected.map(q => q.id)]));
+    try { localStorage.setItem(USED_KEY, JSON.stringify(newUsed)); } catch (e) {}
+
+    setSessionQuestions(selected);
     setCurrentIdx(0);
     setUserAnswers({});
     setFlaggedQuestions({});
@@ -167,6 +202,8 @@ function App() {
       if (userAnswers[idx] === q.a) finalScore++;
     });
 
+    const passMessage = finalScore > 50 ? 'Congratulations — great job!' : 'Needs Improvement — keep studying.';
+
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '20px 10px', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
         <div style={{ maxWidth: '800px', margin: '0 auto', background: '#ffffff', padding: '20px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
@@ -175,6 +212,7 @@ function App() {
             <div style={{ flex: 1, padding: '15px', background: '#f9fafb', borderRadius: '6px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '13px', color: '#6b7280', fontWeight: 'bold' }}>FINAL SCORE</div>
               <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#4f46e5' }}>{finalScore} / {sessionQuestions.length}</div>
+              <div style={{ marginTop: '8px', fontSize: '14px', color: finalScore > 50 ? '#065f46' : '#7f1d1d', fontWeight: '600' }}>{passMessage}</div>
             </div>
             <div style={{ flex: 1, padding: '15px', background: '#f9fafb', borderRadius: '6px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
               <div style={{ fontSize: '13px', color: '#6b7280', fontWeight: 'bold' }}>TIME ELAPSED</div>
