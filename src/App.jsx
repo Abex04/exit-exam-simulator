@@ -12,6 +12,7 @@ function App() {
   const [viewMode, setViewMode] = useState('welcome'); // 'welcome' | 'test' | 'results'
   const [examMode, setExamMode] = useState('review'); // 'immediate' | 'review'
   const [hasVerifiedCurrent, setHasVerifiedCurrent] = useState(false); 
+  const [pickerMode, setPickerMode] = useState(null); // temporary selected mode for picker ('immediate'|'review')
   
   const [timeElapsed, setTimeElapsed] = useState(0);
   const timerRef = useRef(null);
@@ -23,7 +24,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const configureAndStartSession = (selectedMode) => {
+  const configureAndStartSession = (selectedMode, practiceExam = null) => {
     setExamMode(selectedMode);
     
     // Safety Fallback check: If the questions array is empty or missing, prevent crash
@@ -32,45 +33,60 @@ function App() {
       return;
     }
 
-    // NEW: Limit sessions to exactly 100 unique questions.
-    // Persist used question ids in localStorage to avoid duplicates across retakes.
-    const USED_KEY = 'usedQuestionIds_v1';
+    // If a practiceExam is requested, select a deterministic id-range for that practice
+    // and allow unlimited retakes (do not persist used-ids for practice exams).
     const allQuestions = [...examQuestions];
 
-    let usedIds = [];
-    try {
-      const raw = localStorage.getItem(USED_KEY);
-      usedIds = raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      usedIds = [];
-    }
+    if (practiceExam) {
+      let startId = 1;
+      let endId = 100;
+      let count = 100;
+      if (practiceExam === 1) { startId = 1; endId = 100; count = 100; }
+      else if (practiceExam === 2) { startId = 101; endId = 200; count = 100; }
+      else if (practiceExam === 3) { startId = 201; endId = 310; count = 110; }
 
-    // Filter out questions already used in prior sessions
-    let available = allQuestions.filter(q => !usedIds.includes(q.id));
+      const pool = allQuestions.filter(q => q.id >= startId && q.id <= endId);
+      const shuffled = pool.sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, Math.min(count, shuffled.length));
 
-    // If not enough unused questions remain to form a 100-item session,
-    // reset the used history so a fresh full draw can be made.
-    if (available.length < 100) {
-      // Only notify when there are some used ids (otherwise pool itself is <100)
-      if (usedIds.length > 0) {
-        // Inform the user that used history is being reset to allow a new 100-question session
-        // This avoids silently duplicating across retakes when pool is exhausted.
-        // Using alert keeps UI simple and explicit.
-        alert('Not enough unused questions remaining to form a 100-question session. Resetting previous session history to allow a fresh session.');
+      setSessionQuestions(selected);
+    } else {
+      // NEW: Limit sessions to exactly 100 unique questions.
+      // Persist used question ids in localStorage to avoid duplicates across retakes.
+      const USED_KEY = 'usedQuestionIds_v1';
+
+      let usedIds = [];
+      try {
+        const raw = localStorage.getItem(USED_KEY);
+        usedIds = raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        usedIds = [];
       }
-      available = allQuestions.slice();
-      usedIds = [];
+
+      // Filter out questions already used in prior sessions
+      let available = allQuestions.filter(q => !usedIds.includes(q.id));
+
+      // If not enough unused questions remain to form a 100-item session,
+      // reset the used history so a fresh full draw can be made.
+      if (available.length < 100) {
+        // Only notify when there are some used ids (otherwise pool itself is <100)
+        if (usedIds.length > 0) {
+          alert('Not enough unused questions remaining to form a 100-question session. Resetting previous session history to allow a fresh session.');
+        }
+        available = allQuestions.slice();
+        usedIds = [];
+      }
+
+      // Shuffle available and pick exactly 100 items (or fewer if pool <100)
+      const shuffled = available.sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, Math.min(100, shuffled.length));
+
+      // Update used ids and persist
+      const newUsed = Array.from(new Set([...usedIds, ...selected.map(q => q.id)]));
+      try { localStorage.setItem(USED_KEY, JSON.stringify(newUsed)); } catch (e) {}
+
+      setSessionQuestions(selected);
     }
-
-    // Shuffle available and pick exactly 100 items (or fewer if pool <100)
-    const shuffled = available.sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, Math.min(100, shuffled.length));
-
-    // Update used ids and persist
-    const newUsed = Array.from(new Set([...usedIds, ...selected.map(q => q.id)]));
-    try { localStorage.setItem(USED_KEY, JSON.stringify(newUsed)); } catch (e) {}
-
-    setSessionQuestions(selected);
     setCurrentIdx(0);
     setUserAnswers({});
     setFlaggedQuestions({});
@@ -156,10 +172,9 @@ function App() {
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'left', marginBottom: '40px' }}>
-            
-            {/* Immediate Feedback Option */}
+            {/* Immediate Feedback Option (click to open exam picker) */}
             <div 
-              onClick={() => configureAndStartSession('immediate')}
+              onClick={() => { setPickerMode('immediate'); setViewMode('picker'); }}
               style={{ padding: '20px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', gap: '16px', alignItems: 'center' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = '#5c5bc4'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
@@ -171,9 +186,9 @@ function App() {
               </div>
             </div>
 
-            {/* Review Mode Option */}
+            {/* Review Mode Option (click to open exam picker) */}
             <div 
-              onClick={() => configureAndStartSession('review')}
+              onClick={() => { setPickerMode('review'); setViewMode('picker'); }}
               style={{ padding: '20px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', gap: '16px', alignItems: 'center' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = '#3b3bc4'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
@@ -189,6 +204,44 @@ function App() {
 
           <div style={{ fontSize: '12px', color: '#64748b' }}>
             System Engine v2.7 • Total Pool Size: {examQuestions?.length || 0} Questions Loaded
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- EXAM PICKER INTERMEDIATE SCREEN ---
+  if (viewMode === 'picker') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #1e1e38 0%, #0f0f1d 100%)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', fontFamily: 'system-ui, sans-serif', boxSizing: 'border-box' }}>
+        <div style={{ width: '100%', maxWidth: '800px', background: 'rgba(255, 255, 255, 0.03)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: isMobile ? '20px' : '30px', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', color: '#ffffff', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <button onClick={() => { setViewMode('welcome'); setPickerMode(null); }} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>← Back</button>
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', background: 'linear-gradient(90deg, #ffffff, #a5a6f6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Select Practice Exam</h2>
+              <div style={{ fontSize: '12px', color: '#94a3b8' }}>{pickerMode === 'immediate' ? 'Immediate Feedback Mode' : 'Exam Review Mode'}</div>
+            </div>
+            <div style={{ width: 80 }} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px', marginTop: '12px' }}>
+            {[1,2,3].map(num => {
+              const title = num === 1 ? 'Practice Exam 1' : num === 2 ? 'Practice Exam 2' : 'Practice Exam 3';
+              const count = num === 3 ? 110 : 100;
+              const idRange = num === 1 ? '1–100' : num === 2 ? '101–200' : '201–310';
+              return (
+                <div key={num} style={{ padding: '18px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '140px' }}>
+                  <div>
+                    <div style={{ fontSize: '22px' }}>{num === 1 ? '1️⃣' : num === 2 ? '2️⃣' : '3️⃣'}</div>
+                    <h3 style={{ margin: '8px 0 6px 0', fontSize: '16px', color: '#ffffff' }}>{title}</h3>
+                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>{count} Questions • IDs {idRange}</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <button onClick={() => configureAndStartSession(pickerMode || 'review', num)} style={{ flex: 1, padding: '10px', background: '#3b3bc4', color: '#ffffff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700' }}>Start</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
