@@ -296,16 +296,16 @@ const raw = [
   {
     "id": 22,
     "category": "OOP & Programming",
-    "question": "Which one of the following is a correct identifier in C++?",
+    "question": "Which access modifier in Java restricts access to members only within the same class?",
     "options": [
-      "7variable",
-      "7VARIABLE",
-      "$variable",
-      "variable_1234"
+      "public",
+      "protected",
+      "private",
+      "package-private (no modifier)"
     ],
-    "answer": 3,
-    "answer_text": "variable_1234",
-    "explanation": "Identifiers in C++ must start with a letter or underscore. 'variable_1234' is the only valid option."
+    "answer": 2,
+    "answer_text": "private",
+    "explanation": "The `private` modifier restricts access to the declaring class only. Package-private (no modifier) allows access within the same package."
   },
   {
     "id": 23,
