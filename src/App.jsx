@@ -24,6 +24,59 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  const shuffle = (arr) => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  const hashString = (str) => {
+    const s = (str || '').toString();
+    let hash = 5381;
+    for (let i = 0; i < s.length; i++) {
+      hash = ((hash << 5) + hash) + s.charCodeAt(i); /* hash * 33 + c */
+      hash = hash & 0xffffffff;
+    }
+    return Math.abs(hash);
+  };
+
+  const buildContentBuckets = (allQuestions) => {
+    const desired = [100, 100, 110];
+    const buckets = [[], [], []];
+    allQuestions.forEach(q => {
+      const text = q.q || q.question || q.raw?.question || '';
+      const b = hashString(text) % 3;
+      buckets[b].push(q);
+    });
+
+    // Keep deterministic ordering (by id) so content->bucket mapping is stable
+    for (let i = 0; i < 3; i++) buckets[i] = buckets[i].sort((a, b) => a.id - b.id);
+
+    const final = [[], [], []];
+    const leftovers = [];
+
+    for (let i = 0; i < 3; i++) {
+      if (buckets[i].length <= desired[i]) {
+        final[i] = buckets[i].slice();
+      } else {
+        final[i] = buckets[i].slice(0, desired[i]);
+        leftovers.push(...buckets[i].slice(desired[i]));
+      }
+    }
+
+    // Fill deficits from leftovers (deterministic order)
+    for (let i = 0; i < 3; i++) {
+      while (final[i].length < desired[i] && leftovers.length > 0) {
+        final[i].push(leftovers.shift());
+      }
+    }
+
+    return final;
+  };
+
   const configureAndStartSession = (selectedMode, practiceExam = null) => {
     setExamMode(selectedMode);
     
@@ -38,17 +91,13 @@ function App() {
     const allQuestions = [...examQuestions];
 
     if (practiceExam) {
-      let startId = 1;
-      let endId = 100;
-      let count = 100;
-      if (practiceExam === 1) { startId = 1; endId = 100; count = 100; }
-      else if (practiceExam === 2) { startId = 101; endId = 200; count = 100; }
-      else if (practiceExam === 3) { startId = 201; endId = 310; count = 110; }
+      const count = practiceExam === 3 ? 110 : 100;
+      const bucketIndex = Math.max(0, Math.min(2, practiceExam - 1));
 
-      const pool = allQuestions.filter(q => q.id >= startId && q.id <= endId);
-      const shuffled = pool.sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, Math.min(count, shuffled.length));
-
+      // Build three disjoint content-based buckets and pick the requested one
+      const buckets = buildContentBuckets(allQuestions);
+      const pool = buckets[bucketIndex] || [];
+      const selected = pool.slice(0, Math.min(count, pool.length));
       setSessionQuestions(selected);
     } else {
       // NEW: Limit sessions to exactly 100 unique questions.
@@ -78,7 +127,7 @@ function App() {
       }
 
       // Shuffle available and pick exactly 100 items (or fewer if pool <100)
-      const shuffled = available.sort(() => 0.5 - Math.random());
+      const shuffled = shuffle(available);
       const selected = shuffled.slice(0, Math.min(100, shuffled.length));
 
       // Update used ids and persist
